@@ -201,8 +201,8 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
         <View style={styles.header}>
           <Text style={styles.companyName}>NORTH HOUSE GROUP</Text>
           <Text style={styles.companyInfo}>Premium Remodeling & Construction Services</Text>
-          <Text style={styles.companyInfo}>Aspen, Colorado | (970) 555-0100</Text>
-          <Text style={styles.companyInfo}>info@northhousegroup.com | www.northhousegroup.com</Text>
+          <Text style={styles.companyInfo}>Aspen, Colorado</Text>
+          <Text style={styles.companyInfo}>william@northhousegroup.com | www.northhousegroup.com</Text>
           <Text style={styles.title}>PROJECT ESTIMATE</Text>
           <Text style={{ fontSize: 12, color: '#666', marginTop: 5, fontStyle: 'italic' }}>
             Cost-Plus Pricing: Actual Cost + 20% Markup
