@@ -9,6 +9,7 @@ export interface Bid {
   baseCost: number;
   markup: number;
   totalBid: number;
+  markupPercentage?: number;
   changeOrderMarkup: number;
   createdAt: Date;
   clientName: string;
@@ -17,6 +18,13 @@ export interface Bid {
   projectTimeline: string;
   notes: string;
   pdfFileName?: string;
+  sectionNotes?: Record<string, string>; // Maps section name to its notes
+  companyName?: string;
+  companyTagline?: string;
+  companyLocation?: string;
+  companyEmail?: string;
+  companyWebsite?: string;
+  showCostPlusLanguage?: boolean;
 }
 
 export interface ScopeItem {

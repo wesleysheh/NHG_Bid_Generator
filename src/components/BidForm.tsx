@@ -22,11 +22,14 @@ import {
   DialogActions,
   Chip,
   Stack,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import EditIcon from '@mui/icons-material/Edit';
+import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import { useForm, Controller } from 'react-hook-form';
 import { v4 as uuidv4 } from 'uuid';
 import { Bid, ScopeItem } from '../types';
@@ -39,6 +42,7 @@ import {
   formatCurrency,
 } from '../utils/calculations';
 import { saveBid } from '../utils/storage';
+import { parseCustomRequest, formatCustomRequestExample } from '../utils/customRequestParser';
 
 interface BidFormProps {
   onBidCreated: (bid: Bid) => void;
@@ -48,11 +52,25 @@ interface ProjectSection {
   id: string;
   name: string;
   items: ScopeItem[];
+  notes?: string;
 }
 
 const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
-  const { control, handleSubmit, watch, setValue, getValues } = useForm();
+  const { control, handleSubmit, watch, setValue, getValues } = useForm<any>({
+    defaultValues: {
+      markupPercentage: 20,
+      companyName: 'NORTH HOUSE GROUP',
+      companyTagline: 'Premium Remodeling & Construction Services',
+      companyLocation: 'Aspen, Colorado',
+      companyEmail: 'william@northhousegroup.com',
+      companyWebsite: '',
+      showCostPlusLanguage: true
+    }
+  });
   const [projectSections, setProjectSections] = useState<ProjectSection[]>([]);
+  
+  // Watch the markup percentage for reactive updates
+  const watchedMarkup = watch('markupPercentage');
   const [showSuccess, setShowSuccess] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [selectedTemplateCategory, setSelectedTemplateCategory] = useState('');
@@ -62,6 +80,8 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
   const [customSize, setCustomSize] = useState<number | ''>('');
   const [pdfFileNameManuallyEdited, setPdfFileNameManuallyEdited] = useState(false);
   const [hasGeneratedFileName, setHasGeneratedFileName] = useState(false);
+  const [customRequestDialogOpen, setCustomRequestDialogOpen] = useState(false);
+  const [customRequestText, setCustomRequestText] = useState('');
 
   // Function to generate PDF filename when client name field loses focus
   const generatePdfFileName = () => {
@@ -121,6 +141,38 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
       }],
     };
     setProjectSections(prev => [...prev, newSection]);
+  };
+
+  const handleParseCustomRequest = () => {
+    const parsed = parseCustomRequest(customRequestText);
+    
+    if (parsed.sections && parsed.sections.length > 0) {
+      // Add each section separately
+      const newSections = parsed.sections.map(section => ({
+        id: uuidv4(),
+        name: section.name,
+        items: section.items,
+        notes: section.notes || '',
+      }));
+      
+      setProjectSections(prev => [...prev, ...newSections]);
+      setCustomRequestDialogOpen(false);
+      setCustomRequestText('');
+    } else if (parsed.items.length > 0) {
+      // Single section fallback
+      const newSection: ProjectSection = {
+        id: uuidv4(),
+        name: parsed.projectName,
+        items: parsed.items.map(item => ({
+          ...item,
+          projectSection: parsed.projectName,
+        })),
+      };
+      
+      setProjectSections(prev => [...prev, newSection]);
+      setCustomRequestDialogOpen(false);
+      setCustomRequestText('');
+    }
   };
 
   const addItemToSection = (sectionId: string) => {
@@ -215,7 +267,8 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
     
     const materialCosts = allItems.reduce((total, item) => total + (item.materialCost || 0), 0);
     const baseCost = calculateBaseCost(laborCosts, materialCosts);
-    const markup = calculateMarkup(baseCost);
+    const markupPercentage = getValues('markupPercentage') || 20;
+    const markup = calculateMarkup(baseCost, markupPercentage);
     const totalBid = calculateTotalBid(baseCost, markup);
 
     return { laborCosts, materialCosts, baseCost, markup, totalBid };
@@ -224,6 +277,14 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
   const onSubmit = (data: any) => {
     const totals = calculateTotals();
     const allItems = projectSections.flatMap(section => section.items);
+    
+    // Create section notes mapping
+    const sectionNotesMap: Record<string, string> = {};
+    projectSections.forEach(section => {
+      if (section.notes) {
+        sectionNotesMap[section.name] = section.notes;
+      }
+    });
     
     const bid: Bid = {
       id: uuidv4(),
@@ -236,6 +297,7 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
       baseCost: totals.baseCost,
       markup: totals.markup,
       totalBid: totals.totalBid,
+      markupPercentage: data.markupPercentage || 20,
       changeOrderMarkup: 0.35,
       createdAt: new Date(),
       clientName: data.clientName,
@@ -244,6 +306,13 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
       projectTimeline: data.projectTimeline || '',
       notes: data.notes || '',
       pdfFileName: data.pdfFileName || '',
+      sectionNotes: Object.keys(sectionNotesMap).length > 0 ? sectionNotesMap : undefined,
+      companyName: data.companyName || 'NORTH HOUSE GROUP',
+      companyTagline: data.companyTagline || 'Premium Remodeling & Construction Services',
+      companyLocation: data.companyLocation || 'Aspen, Colorado',
+      companyEmail: data.companyEmail || 'william@northhousegroup.com',
+      companyWebsite: data.companyWebsite || '',
+      showCostPlusLanguage: data.showCostPlusLanguage !== undefined ? data.showCostPlusLanguage : true,
     };
 
     saveBid(bid);
@@ -304,6 +373,87 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
 
         <form onSubmit={handleSubmit(onSubmit)}>
           <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <Typography variant="h6" gutterBottom>
+                Company Information
+              </Typography>
+            </Grid>
+            
+            <Grid item xs={12} md={4}>
+              <Controller
+                name="companyName"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Company Name"
+                    fullWidth
+                    helperText="Your company/LLC name for the PDF"
+                  />
+                )}
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={4}>
+              <Controller
+                name="companyTagline"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Company Tagline"
+                    fullWidth
+                    helperText="e.g., Premium Remodeling Services"
+                  />
+                )}
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={4}>
+              <Controller
+                name="companyLocation"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Company Location"
+                    fullWidth
+                    helperText="City, State"
+                  />
+                )}
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <Controller
+                name="companyEmail"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Company Email"
+                    type="email"
+                    fullWidth
+                  />
+                )}
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <Controller
+                name="companyWebsite"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Company Website"
+                    fullWidth
+                    helperText="Optional"
+                  />
+                )}
+              />
+            </Grid>
+            
             <Grid item xs={12}>
               <Typography variant="h6" gutterBottom>
                 Client Information
@@ -416,6 +566,13 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
                   </Button>
                   <Button
                     variant="outlined"
+                    startIcon={<ContentPasteIcon />}
+                    onClick={() => setCustomRequestDialogOpen(true)}
+                  >
+                    Paste Custom Request
+                  </Button>
+                  <Button
+                    variant="outlined"
                     startIcon={<AddIcon />}
                     onClick={addCustomSection}
                   >
@@ -481,6 +638,24 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
                       </AccordionSummary>
                       <AccordionDetails>
                         <Box sx={{ width: '100%' }}>
+                          <TextField
+                            label="Section Notes"
+                            value={section.notes || ''}
+                            onChange={(e) => {
+                              setProjectSections(prev => prev.map(s => 
+                                s.id === section.id 
+                                  ? { ...s, notes: e.target.value }
+                                  : s
+                              ));
+                            }}
+                            fullWidth
+                            multiline
+                            rows={2}
+                            variant="outlined"
+                            size="small"
+                            sx={{ mb: 2 }}
+                            placeholder="Add notes about this section..."
+                          />
                           <Button
                             size="small"
                             startIcon={<AddIcon />}
@@ -688,6 +863,47 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
               />
             </Grid>
 
+            <Grid item xs={12} md={4}>
+              <Controller
+                name="markupPercentage"
+                control={control}
+                defaultValue={20}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Markup Percentage (%)"
+                    type="number"
+                    fullWidth
+                    InputProps={{
+                      endAdornment: <Typography>%</Typography>,
+                    }}
+                    helperText="Percentage markup to add to base costs"
+                  />
+                )}
+              />
+            </Grid>
+            
+            <Grid item xs={12} md={4}>
+              <Controller
+                name="showCostPlusLanguage"
+                control={control}
+                defaultValue={true}
+                render={({ field }) => (
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        {...field}
+                        checked={field.value}
+                        color="primary"
+                      />
+                    }
+                    label="Show Cost-Plus Language"
+                    sx={{ mt: 2 }}
+                  />
+                )}
+              />
+            </Grid>
+
             <Grid item xs={12}>
               <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
                 <Typography variant="h6">Pricing Summary</Typography>
@@ -703,7 +919,7 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
                       Base Cost: {formatCurrency(calculateTotals().baseCost)}
                     </Typography>
                     <Typography variant="body2">
-                      Markup (20%): {formatCurrency(calculateTotals().markup)}
+                      Markup ({watchedMarkup || 20}%): {formatCurrency(calculateTotals().markup)}
                     </Typography>
                     <Divider sx={{ my: 1 }} />
                     <Typography variant="h6">
@@ -845,6 +1061,44 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
             disabled={!selectedTemplateId}
           >
             Add to Bid
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={customRequestDialogOpen}
+        onClose={() => setCustomRequestDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Paste Custom Request</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="info">
+              Paste a work request or scope description below. The system will automatically parse it into scope items.
+            </Alert>
+            <Typography variant="body2" color="text.secondary">
+              {formatCustomRequestExample()}
+            </Typography>
+            <TextField
+              label="Paste your custom request here"
+              multiline
+              rows={10}
+              value={customRequestText}
+              onChange={(e) => setCustomRequestText(e.target.value)}
+              fullWidth
+              placeholder="Example:\nKitchen Renovation:\n- Remove existing cabinets - 8 hours\n- Install new cabinets - $8000, 24 hours\n- Update plumbing - $1500, 12 hours"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCustomRequestDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleParseCustomRequest}
+            variant="contained"
+            disabled={!customRequestText.trim()}
+          >
+            Parse & Add to Bid
           </Button>
         </DialogActions>
       </Dialog>

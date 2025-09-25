@@ -194,19 +194,62 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
     return acc;
   }, {} as Record<string, typeof bid.scope>);
 
+  // Helper function to replace company name in legal text
+  const replaceLegalCompanyName = (text: string): string => {
+    const companyName = bid.companyName || 'North House Group';
+    let updatedText = text
+      .replace(/North House Group, LLC/g, `${companyName}, LLC`)
+      .replace(/North House Group/g, companyName);
+    
+    // If not showing cost-plus language, remove markup references
+    if (!bid.showCostPlusLanguage) {
+      // For direct cost billing, replace the cost-plus language
+      updatedText = updatedText
+        .replace(/This estimate is provided by .+ based on a Cost-Plus pricing model, whereby the Client agrees to pay the actual cost of materials and labor plus a twenty percent \(20%\) markup\./g, 
+          `This estimate is provided by ${companyName}, LLC ("Contractor") for the services and materials described herein.`)
+        .replace(/Under this transparent pricing structure, Client will receive complete documentation including all receipts and time logs\. There are no hidden markups on materials beyond the stated twenty percent\./g, 
+          'All work will be performed according to industry standards and best practices.')
+        .replace(/Should the project costs come in under the estimated amount, Client will pay only the actual costs plus markup\./g, 
+          'Should the project costs come in under the estimated amount, Client will pay only the actual costs.')
+        .replace(/actual cost plus a twenty percent \(20%\) markup/g, 'agreed contract price')
+        .replace(/actual costs plus markup/g, 'contract price')
+        .replace(/plus a twenty percent \(20%\) markup/g, '')
+        .replace(/plus the agreed-upon markup/g, '')
+        .replace(/that change orders carry a higher markup rate of thirty-five percent \(35%\) versus the base markup of twenty percent \(20%\)/g, 
+          'that change orders are subject to additional charges')
+        .replace(/All Change Orders are billed at actual cost plus a thirty-five percent \(35%\) markup, compared to the twenty percent \(20%\) markup on base contract work\./g, 
+          'All Change Orders are subject to additional charges.')
+        .replace(/at an additional fifteen percent \(15%\) premium above standard Change Order rates/g, 
+          'at additional premium rates')
+        .replace(/Contractor shall not apply markup to actual cost increases/g, 
+          'Contractor shall pass through cost increases')
+        .replace(/standard markup applies to all work performed/g, 'standard pricing applies to all work performed')
+        .replace(/plus a thirty-five percent \(35%\) markup/g, 'at agreed change order rates')
+        .replace(/thirty-five percent \(35%\) markup/g, 'change order pricing')
+        .replace(/plus a twenty percent \(20%\) termination fee/g, 'plus applicable termination fees');
+    }
+    
+    return updatedText;
+  };
+
   return (
     <Document>
       {/* PAGE 1 - Client Info, Property Details, Pricing Summary, and Disclosure */}
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
-          <Text style={styles.companyName}>NORTH HOUSE GROUP</Text>
-          <Text style={styles.companyInfo}>Premium Remodeling & Construction Services</Text>
-          <Text style={styles.companyInfo}>Aspen, Colorado</Text>
-          <Text style={styles.companyInfo}>william@northhousegroup.com | www.northhousegroup.com</Text>
-          <Text style={styles.title}>PROJECT ESTIMATE</Text>
-          <Text style={{ fontSize: 12, color: '#666', marginTop: 5, fontStyle: 'italic' }}>
-            Cost-Plus Pricing: Actual Cost + 20% Markup
+          <Text style={styles.companyName}>{bid.companyName || 'NORTH HOUSE GROUP'}</Text>
+          <Text style={styles.companyInfo}>{bid.companyTagline || 'Premium Remodeling & Construction Services'}</Text>
+          <Text style={styles.companyInfo}>{bid.companyLocation || 'Aspen, Colorado'}</Text>
+          <Text style={styles.companyInfo}>
+            {bid.companyEmail || 'william@northhousegroup.com'}
+            {bid.companyWebsite && ` | ${bid.companyWebsite}`}
           </Text>
+          <Text style={styles.title}>PROJECT ESTIMATE</Text>
+          {bid.showCostPlusLanguage && bid.markupPercentage && bid.markupPercentage > 0 && (
+            <Text style={{ fontSize: 12, color: '#666', marginTop: 5, fontStyle: 'italic' }}>
+              Cost-Plus Pricing: Actual Cost + {bid.markupPercentage}% Markup
+            </Text>
+          )}
         </View>
 
         {/* Client and Property Info in Two Columns */}
@@ -242,6 +285,9 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
 
         {/* Pricing Summary */}
         <View style={styles.totalSection}>
+          {bid.showCostPlusLanguage && (
+            <Text style={styles.sectionTitle}>PRICING BREAKDOWN SUMMARY</Text>
+          )}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Labor Costs:</Text>
             <Text style={styles.totalValue}>{formatCurrency(bid.laborCosts)}</Text>
@@ -250,28 +296,36 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
             <Text style={styles.totalLabel}>Material Costs:</Text>
             <Text style={styles.totalValue}>{formatCurrency(bid.materialCosts)}</Text>
           </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Base Cost:</Text>
-            <Text style={styles.totalValue}>{formatCurrency(bid.baseCost)}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Markup (20%):</Text>
-            <Text style={styles.totalValue}>{formatCurrency(bid.markup)}</Text>
-          </View>
+          {bid.showCostPlusLanguage && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Base Cost:</Text>
+              <Text style={styles.totalValue}>{formatCurrency(bid.baseCost)}</Text>
+            </View>
+          )}
+          {bid.showCostPlusLanguage && bid.markupPercentage && bid.markupPercentage > 0 && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Markup ({bid.markupPercentage}%):</Text>
+              <Text style={styles.totalValue}>{formatCurrency(bid.markup)}</Text>
+            </View>
+          )}
           <View style={styles.grandTotal}>
             <Text style={styles.grandTotalLabel}>ESTIMATED PROJECT TOTAL:</Text>
             <Text style={styles.grandTotalValue}>{formatCurrency(bid.totalBid)}</Text>
           </View>
-          <Text style={{ fontSize: 9, marginTop: 10, fontStyle: 'italic', textAlign: 'center' }}>
-            *Final invoice will reflect actual costs + 20% markup
-          </Text>
+          {bid.showCostPlusLanguage && bid.markupPercentage && bid.markupPercentage > 0 && (
+            <Text style={{ fontSize: 9, marginTop: 10, fontStyle: 'italic', textAlign: 'center' }}>
+              *Final invoice will reflect actual costs + {bid.markupPercentage}% markup
+            </Text>
+          )}
         </View>
 
 
         {bid.notes && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>ADDITIONAL NOTES</Text>
-            <Text style={{ fontSize: 10 }}>{bid.notes}</Text>
+            <Text style={{ fontSize: 10 }}>
+              {bid.notes}
+            </Text>
           </View>
         )}
 
@@ -291,7 +345,8 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
           const sectionTotal = sectionMaterials + (sectionLabor * laborRate);
 
           // Estimate if this section will fit on current page
-          const estimatedLines = 6 + items.length * 3;
+          const notesLines = bid.sectionNotes && bid.sectionNotes[sectionName] ? 4 : 0;
+          const estimatedLines = 6 + items.length * 3 + notesLines;
           const linesPerPage = 40;
           
           if (currentPageItems.length > 0 && 
@@ -300,7 +355,7 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
             allSectionElements.push(
               <Page key={`scope-${currentPageNumber}`} size="A4" style={styles.page}>
                 <View style={styles.header}>
-                  <Text style={styles.companyName}>NORTH HOUSE GROUP</Text>
+                  <Text style={styles.companyName}>{bid.companyName || 'NORTH HOUSE GROUP'}</Text>
                   <Text style={styles.title}>SCOPE OF WORK</Text>
                 </View>
                 {currentPageItems.map(section => section.element)}
@@ -346,6 +401,20 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
                   </View>
                 ))}
               </View>
+              {bid.sectionNotes && bid.sectionNotes[sectionName] && (
+                <View style={{ 
+                  backgroundColor: '#fff8dc', 
+                  padding: 8, 
+                  marginTop: 5, 
+                  borderLeft: '3 solid #ffa500',
+                  borderRadius: 2
+                }}>
+                  <Text style={{ fontSize: 9, fontWeight: 'bold', marginBottom: 2 }}>NOTES:</Text>
+                  <Text style={{ fontSize: 9, fontStyle: 'italic', color: '#333' }}>
+                    {bid.sectionNotes[sectionName]}
+                  </Text>
+                </View>
+              )}
             </View>
           );
 
@@ -357,7 +426,7 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
           allSectionElements.push(
             <Page key={`scope-${currentPageNumber}`} size="A4" style={styles.page}>
               <View style={styles.header}>
-                <Text style={styles.companyName}>NORTH HOUSE GROUP</Text>
+                <Text style={styles.companyName}>{bid.companyName || 'NORTH HOUSE GROUP'}</Text>
                 <Text style={styles.title}>SCOPE OF WORK</Text>
               </View>
               {currentPageItems.map(section => section.element)}
@@ -373,7 +442,7 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
       {/* PRICING STRUCTURE & LABOR RATES PAGE */}
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
-          <Text style={styles.companyName}>NORTH HOUSE GROUP</Text>
+          <Text style={styles.companyName}>{bid.companyName || 'NORTH HOUSE GROUP'}</Text>
           <Text style={styles.title}>PRICING STRUCTURE & LABOR RATES</Text>
         </View>
 
@@ -399,7 +468,7 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
           </View>
           <Text style={{ fontSize: 10, marginTop: 10, fontStyle: 'italic', color: '#1976d2' }}>
             These rates reflect our in-house crew members. Work performed by our own team ensures{'\n'}
-            consistent quality and direct accountability to North House Group standards.
+            consistent quality and direct accountability to {bid.companyName || 'North House Group'} standards.
           </Text>
         </View>
 
@@ -425,7 +494,7 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
           </View>
           <Text style={{ fontSize: 10, marginTop: 10, fontStyle: 'italic' }}>
             External contractors are used for specialized trades. These are typical market rates{'\n'}
-            for licensed professionals in the Aspen area. All external contractors are fully{'\n'}
+            for licensed professionals in the Western Slope. All external contractors are fully{'\n'}
             vetted, licensed, and insured.
           </Text>
           <Text style={{ fontSize: 9, marginTop: 10, color: '#666' }}>
@@ -435,100 +504,102 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
           </Text>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>PRICING BREAKDOWN SUMMARY</Text>
-          <View style={{ flexDirection: 'row', marginTop: 10 }}>
-            <View style={{ flex: 1, paddingRight: 10 }}>
-              <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 5 }}>Material Costs</Text>
-              <Text style={{ fontSize: 10, color: '#666' }}>
-                All materials billed at actual cost with receipts provided. No hidden markups.
-              </Text>
+        {bid.showCostPlusLanguage && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>PRICING BREAKDOWN SUMMARY</Text>
+            <View style={{ flexDirection: 'row', marginTop: 10 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 5 }}>Material Costs</Text>
+                <Text style={{ fontSize: 10, color: '#666' }}>
+                  All materials billed at actual cost with receipts provided. No hidden markups.
+                </Text>
+              </View>
+              <View style={{ flex: 1, paddingLeft: 10 }}>
+                <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 5 }}>Labor Costs</Text>
+                <Text style={{ fontSize: 10, color: '#666' }}>
+                  Billed at published hourly rates shown above. Time tracked and documented.
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1, paddingLeft: 10 }}>
-              <Text style={{ fontSize: 11, fontWeight: 'bold', marginBottom: 5 }}>Labor Costs</Text>
-              <Text style={{ fontSize: 10, color: '#666' }}>
-                Billed at published hourly rates shown above. Time tracked and documented.
+            <View style={{ marginTop: 15, padding: 10, backgroundColor: '#e8f4fd', borderRadius: 5 }}>
+              <Text style={{ fontSize: 11, textAlign: 'center', color: '#1976d2', fontWeight: 'bold' }}>
+                Base Project: Cost + {bid.markupPercentage || 20}% | Change Orders: Cost + 35%
               </Text>
             </View>
           </View>
-          <View style={{ marginTop: 15, padding: 10, backgroundColor: '#e8f4fd', borderRadius: 5 }}>
-            <Text style={{ fontSize: 11, textAlign: 'center', color: '#1976d2', fontWeight: 'bold' }}>
-              Base Project: Cost + 20% | Change Orders: Cost + 35%
-            </Text>
-          </View>
-        </View>
+        )}
 
         <View style={styles.footer}>
-          <Text>North House Group • Premium Remodeling & Construction</Text>
+          <Text>{bid.companyName || 'North House Group'} • {bid.companyTagline || 'Premium Remodeling & Construction'}</Text>
         </View>
       </Page>
 
       {/* TERMS & CONDITIONS - CONTINUOUS FLOW */}
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
-          <Text style={styles.companyName}>NORTH HOUSE GROUP</Text>
+          <Text style={styles.companyName}>{bid.companyName || 'NORTH HOUSE GROUP'}</Text>
           <Text style={styles.title}>TERMS & CONDITIONS</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>ESTIMATE DISCLOSURE</Text>
-          <Text style={styles.legalText}>{legalLanguage.estimateDisclaimer}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.estimateDisclaimer)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>PAYMENT TERMS</Text>
-          <Text style={styles.legalText}>{legalLanguage.paymentTerms}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.paymentTerms)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>CHANGE ORDER PROCEDURES</Text>
-          <Text style={styles.legalText}>{legalLanguage.changeOrders}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.changeOrders)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>WARRANTY COVERAGE</Text>
-          <Text style={styles.legalText}>{legalLanguage.warranty}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.warranty)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>INSURANCE & LIABILITY</Text>
-          <Text style={styles.legalText}>{legalLanguage.liability}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.liability)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>PERMITS & INSPECTIONS</Text>
-          <Text style={styles.legalText}>{legalLanguage.permits}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.permits)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>DISPUTE RESOLUTION</Text>
-          <Text style={styles.legalText}>{legalLanguage.disputeResolution}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.disputeResolution)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>SAFETY & COMPLIANCE</Text>
-          <Text style={styles.legalText}>{legalLanguage.safetyCompliance}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.safetyCompliance)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>FORCE MAJEURE</Text>
-          <Text style={styles.legalText}>{legalLanguage.forceMajeure}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.forceMajeure)}</Text>
         </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.legalTitle}>GENERAL TERMS</Text>
-          <Text style={styles.legalText}>{legalLanguage.generalTerms}</Text>
+          <Text style={styles.legalText}>{replaceLegalCompanyName(legalLanguage.generalTerms)}</Text>
         </View>
 
         <View style={styles.footer}>
-          <Text>North House Group • Terms & Conditions</Text>
+          <Text>{bid.companyName || 'North House Group'} • Terms & Conditions</Text>
         </View>
       </Page>
 
       {/* SIGNATURE PAGE */}
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
-          <Text style={styles.companyName}>NORTH HOUSE GROUP</Text>
+          <Text style={styles.companyName}>{bid.companyName || 'NORTH HOUSE GROUP'}</Text>
           <Text style={styles.title}>AGREEMENT EXECUTION</Text>
         </View>
 
@@ -537,10 +608,17 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
             By signing below, both parties acknowledge that they have read, understood, and agree to be bound by all terms 
             and conditions set forth in this estimate and accompanying documents.
           </Text>
-          <Text style={{ fontSize: 12, marginBottom: 30, lineHeight: 1.6 }}>
-            The undersigned acknowledges that this is an ESTIMATE based on a Cost-Plus pricing model and that actual costs 
-            may vary. Final invoicing will be based on actual costs plus the agreed-upon markup.
-          </Text>
+          {bid.showCostPlusLanguage ? (
+            <Text style={{ fontSize: 12, marginBottom: 30, lineHeight: 1.6 }}>
+              The undersigned acknowledges that this is an ESTIMATE based on a Cost-Plus pricing model and that actual costs 
+              may vary. Final invoicing will be based on actual costs plus the agreed-upon markup.
+            </Text>
+          ) : (
+            <Text style={{ fontSize: 12, marginBottom: 30, lineHeight: 1.6 }}>
+              The undersigned acknowledges that this is an ESTIMATE for the work described herein. 
+              The final invoice will reflect the agreed contract price as detailed in this document.
+            </Text>
+          )}
         </View>
 
         <View style={{ flexDirection: 'row', marginTop: 40 }}>
@@ -560,7 +638,7 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
           </View>
 
           <View style={{ flex: 1, paddingLeft: 20 }}>
-            <Text style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 30 }}>NORTH HOUSE GROUP:</Text>
+            <Text style={{ fontSize: 12, fontWeight: 'bold', marginBottom: 30 }}>{bid.companyName || 'NORTH HOUSE GROUP'}:</Text>
             
             <View style={{ marginBottom: 40 }}>
               <View style={styles.signatureLine} />
@@ -576,7 +654,7 @@ const PDFDocument: React.FC<PDFDocumentProps> = ({ bid }) => {
         </View>
 
         <View style={styles.footer}>
-          <Text>Thank you for choosing North House Group</Text>
+          <Text>Thank you for choosing {bid.companyName || 'North House Group'}</Text>
           <Text>Colorado Contractor License #123456 | Fully Insured & Bonded</Text>
         </View>
       </Page>
