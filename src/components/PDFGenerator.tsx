@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Document,
   Page,
@@ -11,10 +11,12 @@ import {
 } from '@react-pdf/renderer';
 import { Button } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { Bid } from '../types';
 import { formatCurrency } from '../utils/calculations';
 import { legalLanguage } from '../data/legalLanguage';
 import { laborRates } from '../data/laborRates';
+import { githubService } from '../services/githubService';
 
 const styles = StyleSheet.create({
   page: {
@@ -667,20 +669,152 @@ interface PDFGeneratorProps {
 }
 
 const PDFGenerator: React.FC<PDFGeneratorProps> = ({ bid }) => {
+  const [saveStatus, setSaveStatus] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [autoSaved, setAutoSaved] = useState(false);
+  const [pendingOverride, setPendingOverride] = useState(false);
   const fileName = bid.pdfFileName || `NHG_Bid_${bid.clientName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
 
+
+  const handleSaveToGitHub = async (forceOverride: boolean = false) => {
+    setIsSaving(true);
+    
+    if (!forceOverride && !pendingOverride) {
+      setSaveStatus('Checking for existing files...');
+    } else if (forceOverride) {
+      setSaveStatus('Overriding existing files...');
+    } else {
+      setSaveStatus('Saving all files to GitHub...');
+    }
+    
+    const bidData = {
+      clientName: bid.clientName,
+      address: bid.propertyAddress,
+      date: bid.createdAt instanceof Date ? bid.createdAt.toISOString() : bid.createdAt,
+      totalCost: bid.totalBid,
+      items: bid.scope,
+      laborItems: [],
+      squareFootage: bid.squareFootage,
+      pdfBlob: pdfBlob || undefined,
+      pdfFileName: pdfBlob ? fileName : undefined
+    };
+
+    const result = await githubService.saveBid(bidData, forceOverride || pendingOverride);
+    
+    if (result.success) {
+      if (result.error) {
+        // Partial success
+        setSaveStatus(`⚠️ Partially saved: ${result.error}`);
+      } else {
+        setSaveStatus(`✓ All files saved to GitHub!`);
+      }
+      setAutoSaved(true);
+      setPendingOverride(false);
+    } else if (result.exists) {
+      // File exists, ask for confirmation
+      setSaveStatus(`⚠️ Bid already exists for this date. Click "Override" to replace.`);
+      setPendingOverride(true);
+    } else {
+      // Don't show error if not configured
+      if (!result.error?.includes('not configured')) {
+        setSaveStatus(`✗ Error: ${result.error}`);
+      }
+      setPendingOverride(false);
+    }
+    
+    setIsSaving(false);
+    if (!result.exists) {
+      setTimeout(() => setSaveStatus(''), 5000);
+    }
+  };
+
   return (
-    <PDFDownloadLink document={<PDFDocument bid={bid} />} fileName={fileName}>
-      {({ blob, url, loading, error }) => (
+    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <PDFDownloadLink document={<PDFDocument bid={bid} />} fileName={fileName}>
+        {({ blob, url, loading, error }) => {
+          // Capture the blob when it's available
+          if (blob && !loading && !error && blob !== pdfBlob) {
+            setPdfBlob(blob);
+            
+            // Auto-save to GitHub when PDF is ready (only if not already saved)
+            if (!autoSaved) {
+              const bidData = {
+                clientName: bid.clientName,
+                address: bid.propertyAddress,
+                date: bid.createdAt instanceof Date ? bid.createdAt.toISOString() : bid.createdAt,
+                totalCost: bid.totalBid,
+                items: bid.scope,
+                laborItems: [],
+                squareFootage: bid.squareFootage,
+                pdfBlob: blob,
+                pdfFileName: fileName
+              };
+              
+              // Save silently in background (don't override existing)
+              githubService.saveBid(bidData, false).then(result => {
+                if (result.success) {
+                  setAutoSaved(true);
+                  console.log('Auto-saved to GitHub successfully');
+                } else if (result.exists) {
+                  console.log('Bid already exists, skipping auto-save');
+                  setAutoSaved(true); // Mark as saved to prevent repeated attempts
+                } else if (!result.error?.includes('not configured')) {
+                  console.error('Auto-save failed:', result.error);
+                }
+              });
+            }
+          }
+          
+          return (
+            <Button
+              variant="contained"
+              startIcon={<DownloadIcon />}
+              disabled={loading}
+            >
+              {loading ? 'Generating PDF...' : 'Download PDF'}
+            </Button>
+          );
+        }}
+      </PDFDownloadLink>
+      
+      <Button
+        variant={pendingOverride ? "contained" : "outlined"}
+        color={pendingOverride ? "warning" : "primary"}
+        startIcon={<CloudUploadIcon />}
+        onClick={() => handleSaveToGitHub(pendingOverride)}
+        disabled={isSaving}
+      >
+        {isSaving ? 'Saving...' : pendingOverride ? 'Override Existing' : 'Save to GitHub'}
+      </Button>
+      
+      {pendingOverride && (
         <Button
-          variant="contained"
-          startIcon={<DownloadIcon />}
-          disabled={loading}
+          variant="text"
+          onClick={() => {
+            setPendingOverride(false);
+            setSaveStatus('');
+          }}
+          disabled={isSaving}
         >
-          {loading ? 'Generating PDF...' : 'Download PDF'}
+          Cancel
         </Button>
       )}
-    </PDFDownloadLink>
+      
+      {saveStatus && (
+        <div style={{
+          padding: '8px 12px',
+          backgroundColor: saveStatus.includes('✓') ? '#d4edda' : '#f8d7da',
+          color: saveStatus.includes('✓') ? '#155724' : '#721c24',
+          borderRadius: '4px',
+          fontSize: '14px',
+          maxWidth: '100%',
+          wordBreak: 'break-all'
+        }}>
+          {saveStatus}
+        </div>
+      )}
+    </div>
   );
 };
 

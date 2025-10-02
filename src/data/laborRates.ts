@@ -2,13 +2,13 @@ import { LaborRate } from '../types';
 
 export const laborRates: LaborRate[] = [
   // Our Crew Rates
-  { trade: 'General Laborer (Our Crew)', hourlyRate: 45, minimumCharge: 180, isInternal: true },
+  { trade: 'General Laborer (Our Crew)', hourlyRate: 50, minimumCharge: 200, isInternal: true },
   { trade: 'General Carpenter (Our Crew)', hourlyRate: 65, minimumCharge: 260, isInternal: true },
   { trade: 'Master Carpenter (Our Crew)', hourlyRate: 85, minimumCharge: 340, isInternal: true },
   { trade: 'Construction Manager', hourlyRate: 150, minimumCharge: 600, isInternal: true },
   
   // External Contractor Rates
-  { trade: 'General Laborer (External)', hourlyRate: 45, minimumCharge: 180, isInternal: false },
+  { trade: 'General Laborer (External)', hourlyRate: 50, minimumCharge: 200, isInternal: false },
   { trade: 'General Carpenter (External)', hourlyRate: 65, minimumCharge: 260, isInternal: false },
   { trade: 'Master Carpenter (External)', hourlyRate: 85, minimumCharge: 340, isInternal: false },
   { trade: 'Electrician', hourlyRate: 95, minimumCharge: 380, isInternal: false },

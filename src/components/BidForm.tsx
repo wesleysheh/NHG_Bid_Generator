@@ -30,6 +30,9 @@ import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import EditIcon from '@mui/icons-material/Edit';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import PreviewIcon from '@mui/icons-material/Preview';
 import { useForm, Controller } from 'react-hook-form';
 import { v4 as uuidv4 } from 'uuid';
 import { Bid, ScopeItem } from '../types';
@@ -82,6 +85,9 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
   const [hasGeneratedFileName, setHasGeneratedFileName] = useState(false);
   const [customRequestDialogOpen, setCustomRequestDialogOpen] = useState(false);
   const [customRequestText, setCustomRequestText] = useState('');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importJsonText, setImportJsonText] = useState('');
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
 
   // Function to generate PDF filename when client name field loses focus
   const generatePdfFileName = () => {
@@ -358,12 +364,159 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
     { value: 'windows-doors', label: 'Windows & Doors' },
   ];
 
+  // Import JSON function
+  const handleImportJson = () => {
+    try {
+      const data = JSON.parse(importJsonText);
+      
+      // Import client info - handle both 'address' and 'propertyAddress' fields
+      if (data.clientInfo) {
+        setValue('clientName', data.clientInfo.name || '');
+        // Set propertyAddress field (not 'address')
+        setValue('propertyAddress', data.clientInfo.propertyAddress || data.clientInfo.address || '');
+        setValue('date', data.clientInfo.date || new Date().toISOString().split('T')[0]);
+        setValue('clientEmail', data.clientInfo.email || '');
+        setValue('clientPhone', data.clientInfo.phone || '');
+        setValue('propertyType', data.clientInfo.propertyType || 'residential');
+        setValue('squareFootage', data.clientInfo.squareFootage || '');
+      }
+      
+      // Import project scope
+      if (data.projectScope) {
+        setValue('markupPercentage', data.projectScope.markupPercent || 20);
+      }
+      
+      // Import sections
+      if (data.sections && Array.isArray(data.sections)) {
+        const importedSections: ProjectSection[] = data.sections.map((section: any) => ({
+          id: uuidv4(),
+          name: section.name || 'Imported Section',
+          items: section.items?.map((item: any) => ({
+            id: uuidv4(),
+            category: item.category || 'General',
+            description: item.description || item.item || '',
+            quantity: item.quantity || 1,
+            unit: item.unit || 'EA',
+            materialCost: item.materialCost || item.unitPrice || item.totalPrice || 0,
+            materialCostPerUnit: item.unitPrice || item.materialCost || 0,
+            laborHours: item.hours || item.laborHours || 0,
+            laborHoursPerUnit: item.laborHoursPerUnit || 0,
+            projectSection: section.name
+          })) || [],
+          notes: section.notes || ''
+        }));
+        setProjectSections(importedSections);
+      }
+      
+      // Import materials and labor as single section if no sections
+      if (!data.sections && (data.materials || data.labor)) {
+        const items: ScopeItem[] = [];
+        
+        if (data.materials) {
+          data.materials.forEach((mat: any) => {
+            items.push({
+              id: uuidv4(),
+              category: mat.category || 'Materials',
+              description: mat.description || mat.item || '',
+              quantity: mat.quantity || 1,
+              unit: mat.unit || 'EA',
+              materialCost: mat.materialCost || mat.unitPrice || mat.totalPrice || 0,
+              materialCostPerUnit: mat.unitPrice || 0,
+              laborHours: 0,
+              laborHoursPerUnit: 0,
+              projectSection: 'Imported Items'
+            });
+          });
+        }
+        
+        setProjectSections([{
+          id: uuidv4(),
+          name: 'Imported Items',
+          items: items
+        }]);
+      }
+      
+      setImportDialogOpen(false);
+      setImportJsonText('');
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (error) {
+      alert('Invalid JSON format. Please check your data and try again.');
+    }
+  };
+
+  // Export current bid as JSON
+  const handleExportJson = () => {
+    const formData = getValues();
+    const exportData = {
+      clientInfo: {
+        name: formData.clientName || '',
+        propertyAddress: formData.propertyAddress || '',
+        address: formData.propertyAddress || '', // Include both for compatibility
+        date: formData.date || new Date().toISOString().split('T')[0],
+        email: formData.clientEmail || '',
+        phone: formData.clientPhone || '',
+        propertyType: formData.propertyType || 'residential',
+        squareFootage: formData.squareFootage || ''
+      },
+      projectScope: {
+        markupPercent: formData.markupPercentage || 20,
+        baseProject: true
+      },
+      sections: projectSections.map(section => ({
+        name: section.name,
+        items: section.items.map(item => ({
+          category: item.category,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          materialCost: item.materialCost,
+          unitPrice: item.materialCostPerUnit || item.materialCost,
+          laborHours: item.laborHours,
+          laborHoursPerUnit: item.laborHoursPerUnit
+        })),
+        notes: section.notes || ''
+      })),
+      timestamp: new Date().toISOString()
+    };
+    
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bid_${formData.clientName?.replace(/\s+/g, '_') || 'export'}_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <>
       <Paper elevation={3} sx={{ p: 4 }}>
-        <Typography variant="h5" gutterBottom>
-          Create New Bid
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h5">
+            Create New Bid
+          </Typography>
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="outlined"
+              startIcon={<UploadFileIcon />}
+              onClick={() => setImportDialogOpen(true)}
+              size="small"
+            >
+              Import JSON
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<FileDownloadIcon />}
+              onClick={handleExportJson}
+              size="small"
+              disabled={!projectSections.length}
+            >
+              Export JSON
+            </Button>
+          </Stack>
+        </Box>
         
         {showSuccess && (
           <Alert severity="success" sx={{ mb: 2 }}>
@@ -934,9 +1087,21 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
             </Grid>
 
             <Grid item xs={12}>
-              <Button type="submit" variant="contained" size="large" fullWidth>
-                Create Bid
-              </Button>
+              <Stack direction="row" spacing={2}>
+                <Button 
+                  variant="outlined" 
+                  size="large" 
+                  fullWidth
+                  startIcon={<PreviewIcon />}
+                  onClick={() => setPreviewDialogOpen(true)}
+                  disabled={!projectSections.length}
+                >
+                  Preview Bid
+                </Button>
+                <Button type="submit" variant="contained" size="large" fullWidth>
+                  Create Bid
+                </Button>
+              </Stack>
             </Grid>
           </Grid>
         </form>
@@ -1099,6 +1264,180 @@ const BidForm: React.FC<BidFormProps> = ({ onBidCreated }) => {
             disabled={!customRequestText.trim()}
           >
             Parse & Add to Bid
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Import JSON Dialog */}
+      <Dialog 
+        open={importDialogOpen} 
+        onClose={() => setImportDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Import Bid from JSON</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Paste your JSON data below to import a bid. This will populate all fields with the imported data.
+            </Typography>
+            <TextField
+              label="Paste JSON here"
+              multiline
+              rows={15}
+              value={importJsonText}
+              onChange={(e) => setImportJsonText(e.target.value)}
+              fullWidth
+              placeholder={`{
+  "clientInfo": {
+    "name": "Client Name",
+    "address": "123 Main St",
+    "email": "client@email.com",
+    "phone": "555-1234"
+  },
+  "sections": [
+    {
+      "name": "Section Name",
+      "items": [...]
+    }
+  ]
+}`}
+              sx={{ fontFamily: 'monospace' }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleImportJson}
+            variant="contained"
+            disabled={!importJsonText.trim()}
+          >
+            Import Bid
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Preview Dialog */}
+      <Dialog 
+        open={previewDialogOpen} 
+        onClose={() => setPreviewDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Bid Preview</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {/* Client Information */}
+            <Box>
+              <Typography variant="h6" gutterBottom>Client Information</Typography>
+              <Grid container spacing={1}>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary">Name:</Typography>
+                  <Typography variant="body1">{getValues('clientName') || 'Not provided'}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary">Email:</Typography>
+                  <Typography variant="body1">{getValues('email') || 'Not provided'}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary">Phone:</Typography>
+                  <Typography variant="body1">{getValues('phone') || 'Not provided'}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" color="text.secondary">Square Footage:</Typography>
+                  <Typography variant="body1">{getValues('squareFootage') || 'Not specified'}</Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="body2" color="text.secondary">Address:</Typography>
+                  <Typography variant="body1">{getValues('address') || 'Not provided'}</Typography>
+                </Grid>
+              </Grid>
+            </Box>
+
+            <Divider />
+
+            {/* Project Sections */}
+            <Box>
+              <Typography variant="h6" gutterBottom>Project Scope</Typography>
+              {projectSections.map((section, index) => (
+                <Accordion key={section.id} defaultExpanded={index === 0}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography variant="subtitle1">{section.name}</Typography>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Stack spacing={1}>
+                      {section.items.map(item => (
+                        <Box key={item.id} sx={{ pl: 2 }}>
+                          <Typography variant="body2">
+                            • {item.description} - {item.quantity} {item.unit}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ pl: 2 }}>
+                            Material: {formatCurrency(item.materialCost * (item.quantity || 1))} | 
+                            Labor: {item.laborHours} hrs
+                          </Typography>
+                        </Box>
+                      ))}
+                      {section.notes && (
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pt: 1 }}>
+                          Notes: {section.notes}
+                        </Typography>
+                      )}
+                    </Stack>
+                  </AccordionDetails>
+                </Accordion>
+              ))}
+            </Box>
+
+            <Divider />
+
+            {/* Cost Summary */}
+            <Box>
+              <Typography variant="h6" gutterBottom>Cost Summary</Typography>
+              {(() => {
+                const totals = calculateTotals();
+                const allItems = projectSections.flatMap(section => section.items);
+                const totalLaborHours = allItems.reduce((total, item) => total + item.laborHours, 0);
+                return (
+                  <Stack spacing={1}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">Materials:</Typography>
+                      <Typography variant="body2">{formatCurrency(totals.materialCosts)}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">Labor ({totalLaborHours} hrs):</Typography>
+                      <Typography variant="body2">{formatCurrency(totals.laborCosts)}</Typography>
+                    </Box>
+                    <Divider />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">Base Cost:</Typography>
+                      <Typography variant="body2">{formatCurrency(totals.baseCost)}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">Markup ({watchedMarkup}%):</Typography>
+                      <Typography variant="body2">{formatCurrency(totals.markup)}</Typography>
+                    </Box>
+                    <Divider />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="h6">Total Estimate:</Typography>
+                      <Typography variant="h6" color="primary">{formatCurrency(totals.totalBid)}</Typography>
+                    </Box>
+                  </Stack>
+                );
+              })()}
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPreviewDialogOpen(false)}>Close</Button>
+          <Button 
+            onClick={() => {
+              setPreviewDialogOpen(false);
+              handleSubmit(onSubmit)();
+            }}
+            variant="contained"
+          >
+            Generate PDF
           </Button>
         </DialogActions>
       </Dialog>
